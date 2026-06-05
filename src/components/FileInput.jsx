@@ -22,7 +22,13 @@ const FileInput = () => {
         sonnerToast.success('Model deteksi objek siap digunakan');
       } catch (error) {
         console.error('Error loading model:', error);
-        sonnerToast.error('Model tidak dapat dimuat', { description: 'Silakan muat ulang halaman.' });
+        sonnerToast.error('Model tidak dapat dimuat', { 
+          description: error.message,
+          action: {
+            label: "Retry",
+            onClick: () => initModel()
+          }
+        });
       }
     };
 

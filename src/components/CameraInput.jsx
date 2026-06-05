@@ -198,7 +198,13 @@ const CameraInput = () => {
         sonnerToast.success("Model deteksi objek siap digunakan", { id: 'model-loading' });
       } catch (error) {
         console.error("Error loading model:", error);
-        sonnerToast.error("Gagal memuat model", { description: error.message });
+        sonnerToast.error("Gagal memuat model", { 
+          description: error.message,
+          action: {
+            label: "Retry",
+            onClick: () => initializeModel()
+          }
+        });
       }
     };
 
@@ -353,7 +359,6 @@ const CameraInput = () => {
                 autoPlay 
                 playsInline
                 className="w-full h-full object-cover"
-                style={{ transform: 'scaleX(-1)' }}
             >
                 Kamera tidak didukung oleh browser Anda.
             </video>

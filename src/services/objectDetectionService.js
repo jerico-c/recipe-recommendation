@@ -21,9 +21,10 @@ async function loadModel() {
 
   if (modelLoading) {
     console.log('Model sedang dimuat, tunggu...');
-    // Tunggu sampai loading selesai
+    // Tunggu sampai loading selesai - timeout lebih lama untuk mobile
     let attempts = 0;
-    while (modelLoading && attempts < 200) {
+    const maxAttempts = 600; // 60 detik untuk mobile yang lambat
+    while (modelLoading && attempts < maxAttempts) {
       await new Promise(resolve => setTimeout(resolve, 100));
       attempts++;
     }
@@ -38,16 +39,30 @@ async function loadModel() {
   try {
     console.log('Initializing MediaPipe ObjectDetector...');
     
-    // Resolve WebAssembly untuk MediaPipe
-    const vision = await FilesetResolver.forVisionTasks(
-      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
-    );
+    // Deteksi device untuk optimisasi
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    console.log('Device type:', isMobile ? 'Mobile' : 'Desktop');
     
+    // Resolve WebAssembly untuk MediaPipe dengan timeout lebih panjang di mobile
+    console.log('Loading WebAssembly files...');
+    const vision = await Promise.race([
+      FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+      ),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('WebAssembly loading timeout')), isMobile ? 30000 : 15000)
+      )
+    ]);
+    
+    console.log('Creating ObjectDetector with model...');
     // Create ObjectDetector dengan model MobileNetV2 tflite
+    // Gunakan CPU delegate untuk mobile, GPU untuk desktop
+    const delegate = isMobile ? "CPU" : "GPU";
+    
     objectDetector = await ObjectDetector.createFromOptions(vision, {
       baseOptions: {
         modelAssetPath: "/tfjs_model/model_bahan_makanan.tflite",
-        delegate: "GPU" // Gunakan GPU jika tersedia
+        delegate: delegate // CPU untuk mobile, GPU untuk desktop
       },
       scoreThreshold: 0.5, // Threshold kepercayaan deteksi
       runningMode: "IMAGE",
@@ -56,11 +71,12 @@ async function loadModel() {
 
     isModelLoaded = true;
     modelLoadError = null;
-    console.log('MediaPipe ObjectDetector loaded successfully');
+    console.log('MediaPipe ObjectDetector loaded successfully with delegate:', delegate);
     return objectDetector;
 
   } catch (error) {
     console.error('Error loading MediaPipe model:', error);
+    console.error('Error stack:', error.stack);
     modelLoadError = error.message;
     isModelLoaded = false;
     throw error;
