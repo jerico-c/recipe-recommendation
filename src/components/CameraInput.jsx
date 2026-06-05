@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Camera as CameraIcon, Zap, Video, VideoOff, RefreshCw } from 'lucide-react';
 import { useRecipe } from '../context/RecipeContext';
 import { toast as sonnerToast } from 'sonner';
-import { loadModel, predictFromCanvas, getModelStatus } from '../services/tfjsModelService';
+import { loadModel, detectFromCanvas, drawDetections, getModelStatus, getTopDetectionsPerClass } from '../services/objectDetectionService';
 
 
 class Camera {
@@ -192,10 +192,10 @@ const CameraInput = () => {
   useEffect(() => {
     const initializeModel = async () => {
       try {
-        sonnerToast.loading("Memuat model klasifikasi...", { id: 'model-loading' });
+        sonnerToast.loading("Memuat model deteksi objek...", { id: 'model-loading' });
         await loadModel();
         setModelReady(true);
-        sonnerToast.success("Model klasifikasi siap digunakan", { id: 'model-loading' });
+        sonnerToast.success("Model deteksi objek siap digunakan", { id: 'model-loading' });
       } catch (error) {
         console.error("Error loading model:", error);
         sonnerToast.error("Gagal memuat model", { description: error.message });
@@ -259,7 +259,7 @@ const CameraInput = () => {
     if (pictureDataUrl) {
       setPreviewImage(pictureDataUrl);
       setIsCapturing(true);
-      sonnerToast.info("Memproses gambar...", { description: "Menganalisis bahan menggunakan model TFJS."});
+      sonnerToast.info("Memproses gambar...", { description: "Mendeteksi bahan menggunakan model object detection."});
 
       try {
         // Create image element from canvas
@@ -268,12 +268,21 @@ const CameraInput = () => {
           throw new Error("Canvas tidak tersedia");
         }
 
-        // Perform prediction using TFJS
-        const result = await predictFromCanvas(canvas);
+        // Perform object detection using MediaPipe
+        const detectionResult = await detectFromCanvas(canvas);
+        const detections = detectionResult.detections;
         
-        if (result && result.class) {
-            const ingredientName = result.class;
-            const confidence = result.confidence;
+        if (detections && detections.length > 0) {
+          // Draw bounding boxes pada canvas overlay
+          drawDetections(canvas, detections, canvas.width, canvas.height);
+          
+          // Tambahkan semua bahan yang terdeteksi
+          let addedCount = 0;
+          let skippedCount = 0;
+          
+          detections.forEach(detection => {
+            const ingredientName = detection.class;
+            const confidence = detection.confidence;
             
             const isAlreadySelected = selectedIngredients.some(
               (selected) => selected.name.toLowerCase() === ingredientName.toLowerCase()
@@ -284,16 +293,23 @@ const CameraInput = () => {
                 id: `camera-${Date.now()}-${ingredientName.toLowerCase().replace(/\s+/g, '-')}`,
                 name: ingredientName,
               });
-              sonnerToast.success(`Bahan "${ingredientName}" (${confidence}% confidence) berhasil dideteksi dan ditambahkan!`);
+              addedCount++;
             } else {
-              sonnerToast.info(`Bahan "${ingredientName}" sudah ada dalam daftar pilihan.`);
+              skippedCount++;
             }
+          });
+          
+          if (addedCount > 0) {
+            sonnerToast.success(`${addedCount} bahan berhasil dideteksi dan ditambahkan!${skippedCount > 0 ? ` (${skippedCount} sudah ada)` : ''}`);
+          } else if (skippedCount > 0) {
+            sonnerToast.info(`Semua ${skippedCount} bahan yang terdeteksi sudah ada dalam daftar.`);
+          }
         } else {
-            sonnerToast.warning("Prediksi Gagal", { description: "Tidak ada bahan yang dikenali dari gambar yang diambil." });
+            sonnerToast.warning("Deteksi Gagal", { description: "Tidak ada bahan yang terdeteksi dari gambar yang diambil." });
         }
 
       } catch (error) {
-        console.error("Error saat mengambil gambar atau melakukan prediksi:", error);
+        console.error("Error saat mengambil gambar atau melakukan deteksi:", error);
         sonnerToast.error("Terjadi kesalahan", { description: error.message || "Tidak dapat memproses gambar." });
       } finally {
         setIsCapturing(false);

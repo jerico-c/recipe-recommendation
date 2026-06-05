@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { FileImage, UploadCloud, Trash2 } from 'lucide-react';
 import { toast as sonnerToast } from 'sonner';
 import { useRecipe } from '../context/RecipeContext';
-import { loadModel, predictFromFile, getModelStatus } from '../services/tfjsModelService';
+import { loadModel, detectFromFile, getModelStatus } from '../services/objectDetectionService';
 
 const FileInput = () => {
   const fileInputRef = useRef(null);
@@ -19,9 +19,9 @@ const FileInput = () => {
       try {
         await loadModel();
         setModelReady(true);
-        sonnerToast.success('Model ingredient detection siap digunakan');
+        sonnerToast.success('Model deteksi objek siap digunakan');
       } catch (error) {
-        console.error('Error loading TFJS model:', error);
+        console.error('Error loading model:', error);
         sonnerToast.error('Model tidak dapat dimuat', { description: 'Silakan muat ulang halaman.' });
       }
     };
@@ -58,26 +58,39 @@ const FileInput = () => {
     sonnerToast.info("Menganalisis gambar dengan model lokal...", { description: `Berkas: ${file.name}`});
 
     try {
-      const result = await predictFromFile(file);
+      const detectionResult = await detectFromFile(file);
+      const detections = detectionResult.detections;
       
-      if (result && result.class) {
-        const ingredientName = result.class;
-        const confidence = result.confidence;
-        const isAlreadySelected = selectedIngredients.some(
-          (selected) => selected.name.toLowerCase() === ingredientName.toLowerCase()
-        );
+      if (detections && detections.length > 0) {
+        // Tambahkan semua bahan yang terdeteksi
+        let addedCount = 0;
+        let skippedCount = 0;
+        
+        detections.forEach(detection => {
+          const ingredientName = detection.class;
+          const confidence = detection.confidence;
+          const isAlreadySelected = selectedIngredients.some(
+            (selected) => selected.name.toLowerCase() === ingredientName.toLowerCase()
+          );
 
-        if (!isAlreadySelected) {
-          addIngredient({
-            id: `file-${Date.now()}-${ingredientName.toLowerCase().replace(/\s+/g, '-')}`,
-            name: ingredientName,
-          });
-          sonnerToast.success(`Bahan "${ingredientName}" berhasil dideteksi (${confidence.toFixed(1)}% confidence) dan ditambahkan!`);
-        } else {
-          sonnerToast.info(`Bahan "${ingredientName}" sudah ada dalam daftar pilihan.`);
+          if (!isAlreadySelected) {
+            addIngredient({
+              id: `file-${Date.now()}-${ingredientName.toLowerCase().replace(/\s+/g, '-')}`,
+              name: ingredientName,
+            });
+            addedCount++;
+          } else {
+            skippedCount++;
+          }
+        });
+        
+        if (addedCount > 0) {
+          sonnerToast.success(`${addedCount} bahan berhasil dideteksi dan ditambahkan!${skippedCount > 0 ? ` (${skippedCount} sudah ada)` : ''}`);
+        } else if (skippedCount > 0) {
+          sonnerToast.info(`Semua ${skippedCount} bahan yang terdeteksi sudah ada dalam daftar.`);
         }
       } else {
-        sonnerToast.warning("Prediksi Gagal", { description: "Tidak ada bahan yang dikenali dari gambar yang diunggah." });
+        sonnerToast.warning("Deteksi Gagal", { description: "Tidak ada bahan yang terdeteksi dari gambar yang diunggah." });
       }
 
     } catch (error) {
