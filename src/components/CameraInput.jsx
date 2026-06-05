@@ -67,17 +67,40 @@ class Camera {
   
     async getAvailableCameras() {
       try {
+        // Pancing izin sementara agar browser memberikan nama label kamera (iOS/Chrome Mobile butuh ini)
+        try {
+          const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+          tempStream.getTracks().forEach(track => track.stop());
+        } catch (e) {
+          console.warn("Izin kamera mungkin belum diberikan");
+        }
+
         const devices = await navigator.mediaDevices.enumerateDevices();
         const videoDevices = devices.filter(device => device.kind === 'videoinput');
         this.#selectCameraElement.innerHTML = ''; 
+
+        let backCameraId = null;
+
         videoDevices.forEach((device, index) => {
           const option = document.createElement('option');
           option.value = device.deviceId;
-          option.text = device.label || `Camera ${index + 1}`;
+          const label = device.label || `Camera ${index + 1}`;
+          option.text = label;
           this.#selectCameraElement.appendChild(option);
+
+          // Deteksi kamera belakang dari labelnya
+          const labelLower = label.toLowerCase();
+          if (labelLower.includes('back') || labelLower.includes('environment') || labelLower.includes('rear')) {
+            backCameraId = device.deviceId;
+          }
         });
+
         if (videoDevices.length > 0) {
-          this.startCamera(videoDevices[0].deviceId); 
+          // Prioritas: Kamera belakang yang terdeteksi, atau asumsikan kamera terakhir adalah kamera belakang (sering terjadi di HP), atau default kamera pertama
+          const defaultDeviceId = backCameraId || (videoDevices.length > 1 ? videoDevices[videoDevices.length - 1].deviceId : videoDevices[0].deviceId);
+          
+          this.#selectCameraElement.value = defaultDeviceId;
+          this.startCamera(defaultDeviceId); 
         } else {
           console.warn("No cameras found.");
           sonnerToast.error("Tidak ada kamera ditemukan", { description: "Pastikan kamera terhubung dan izin telah diberikan." });
@@ -90,10 +113,17 @@ class Camera {
   
     startCamera(deviceId) {
       Camera.stopAllStreams();
+      
+      // Tambahkan instruksi fallback facingMode: 'environment' agar browser memprioritaskan kamera belakang jika deviceId gagal dimuat
+      const videoConstraints = deviceId 
+        ? { deviceId: { exact: deviceId }, width: { ideal: this.#width } } 
+        : { facingMode: 'environment', width: { ideal: this.#width } };
+
       const constraints = {
-        video: { deviceId: deviceId ? { exact: deviceId } : undefined, width: this.#width },
+        video: videoConstraints,
         audio: false
       };
+
       navigator.mediaDevices.getUserMedia(constraints)
         .then((stream) => {
           this.#currentStream = stream;

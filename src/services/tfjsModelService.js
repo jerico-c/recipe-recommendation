@@ -80,30 +80,44 @@ async function loadModel() {
 }
 
 /**
- * Preprocess image untuk model
+ * Preprocess image untuk model menggunakan Native Canvas
  * @param {HTMLImageElement|HTMLCanvasElement} imageElement
  * @returns {tf.Tensor} Processed tensor [1, 224, 224, 3]
  */
 function preprocessImage(imageElement) {
   return tf.tidy(() => {
-    // Convert image ke tensor
-    let tensor = tf.browser.fromPixels(imageElement);
-    
-    console.log('Original tensor shape:', tensor.shape);
-    console.log('Original tensor dtype:', tensor.dtype);
-    
-    // Resize ke 224x224 (sesuai model training)
-    tensor = tf.image.resizeBilinear(tensor, [224, 224]);
+    // 1. Buat elemen canvas off-screen untuk meresize gambar secara native
+    const canvas = document.createElement('canvas');
+    const targetSize = 224;
+    canvas.width = targetSize;
+    canvas.height = targetSize;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+    // 2. Dapatkan dimensi asli gambar (mendukung tag <img> maupun <canvas> dari kamera)
+    const width = imageElement.naturalWidth || imageElement.videoWidth || imageElement.width;
+    const height = imageElement.naturalHeight || imageElement.videoHeight || imageElement.height;
+
+    // 3. Hitung Center Crop agar gambar tidak gepeng (mencegah distorsi rasio)
+    const size = Math.min(width, height);
+    const startX = (width - size) / 2;
+    const startY = (height - size) / 2;
+
+    // 4. Gambar dan potong langsung ke ukuran 224x224 (Bypass beban WebGL di mobile)
+    ctx.drawImage(
+      imageElement,
+      startX, startY, size, size, // Sumber (dipotong persegi di tengah)
+      0, 0, targetSize, targetSize // Tujuan (langsung di-resize ke 224x224)
+    );
+
+    // 5. Ubah canvas yang ukurannya sudah ideal (224x224) menjadi Tensor
+    // Ini menghemat memori HP secara drastis dan menstabilkan akurasi
+    let tensor = tf.browser.fromPixels(canvas);
     
     // Convert ke float32 dan normalize ke range [0, 1]
     tensor = tensor.cast('float32').div(tf.scalar(255.0));
     
-    console.log('After normalization - min:', tensor.min().arraySync(), 'max:', tensor.max().arraySync());
-    
     // Add batch dimension: [224, 224, 3] -> [1, 224, 224, 3]
     tensor = tensor.expandDims(0);
-    
-    console.log('Final tensor shape for model:', tensor.shape);
     
     return tensor;
   });
