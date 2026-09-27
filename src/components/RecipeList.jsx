@@ -1,33 +1,54 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import RecipeCard from './RecipeCard';
-import { Search, ChevronLeft, ChevronRight, Utensils } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Utensils, SlidersHorizontal } from 'lucide-react';
 
 const RecipeList = ({ recipes }) => {
   // State untuk Pencarian dan Paginasi
   const [searchTerm, setSearchTerm] = useState('');
+  const [cookingMethod, setCookingMethod] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 20;
 
-  // Reset halaman ke 1 setiap kali daftar resep asli atau kata kunci pencarian berubah
+  // Reset halaman ke 1 saat filter berubah, bukan setiap batch rekomendasi masuk
   useEffect(() => {
     setCurrentPage(1);
-  }, [recipes, searchTerm]);
+  }, [searchTerm, cookingMethod]);
+
+  const cookingMethods = useMemo(() => {
+    const methods = recipes.flatMap(recipe =>
+      (recipe.cookingMethod || recipe.Cooking_Method || '')
+        .split(',')
+        .map(method => method.trim())
+        .filter(Boolean),
+    );
+    return [...new Set(methods)].sort((left, right) => left.localeCompare(right, 'id'));
+  }, [recipes]);
 
   // Memfilter resep berdasarkan pencarian (Sangat cepat karena menggunakan useMemo)
   const processedRecipes = useMemo(() => {
-    if (!searchTerm.trim()) return recipes;
-    
     return recipes.filter(recipe => {
       const title = recipe.title || recipe.Title || "";
-      return title.toLowerCase().includes(searchTerm.toLowerCase());
+      const titleMatches = !searchTerm.trim() ||
+        title.toLowerCase().includes(searchTerm.toLowerCase());
+      const methods = (recipe.cookingMethod || recipe.Cooking_Method || '')
+        .split(',')
+        .map(method => method.trim().toLowerCase())
+        .filter(Boolean);
+      const methodMatches = cookingMethod === 'all' ||
+        methods.includes(cookingMethod.toLowerCase());
+      return titleMatches && methodMatches;
     });
-  }, [recipes, searchTerm]);
+  }, [recipes, searchTerm, cookingMethod]);
 
   // Menghitung data untuk paginasi
   const totalPages = Math.ceil(processedRecipes.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   // Memotong array resep untuk hanya menampilkan 20 data pada halaman saat ini
   const currentRecipes = processedRecipes.slice(startIndex, startIndex + itemsPerPage);
+
+  useEffect(() => {
+    setCurrentPage(page => Math.min(page, Math.max(totalPages, 1)));
+  }, [totalPages]);
 
   // Fungsi navigasi halaman
   const goToNextPage = () => setCurrentPage(prev => Math.min(prev + 1, totalPages));
@@ -51,14 +72,30 @@ const RecipeList = ({ recipes }) => {
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <Search size={18} className="text-gray-400" />
             </div>
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Cari nama resep di sini..."
-              className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all shadow-sm text-sm"
-            />
-          </div>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Cari nama resep di sini..."
+                className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all shadow-sm text-sm"
+              />
+            </div>
+            {cookingMethods.length > 0 && (
+              <div className="relative w-full md:w-56">
+                <SlidersHorizontal size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <select
+                  value={cookingMethod}
+                  onChange={(event) => setCookingMethod(event.target.value)}
+                  className="w-full appearance-none pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm bg-white"
+                  aria-label="Filter metode memasak"
+                >
+                  <option value="all">Semua metode memasak</option>
+                  {cookingMethods.map(method => (
+                    <option key={method} value={method}>{method}</option>
+                  ))}
+                </select>
+              </div>
+            )}
         </div>
       )}
 

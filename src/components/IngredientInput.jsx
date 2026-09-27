@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useRecipe } from '../context/RecipeContext'; 
 import { X } from 'lucide-react';
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,52 @@ const newMasterIngredientsList = [
   name: name,
 }));
 
+const normalizeIngredientName = (value) =>
+  value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const getSimilarity = (left, right) => {
+  if (left === right) return 1;
+  if (!left || !right) return 0;
+
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= left.length; row += 1) {
+    const current = [row];
+    for (let column = 1; column <= right.length; column += 1) {
+      current[column] = Math.min(
+        current[column - 1] + 1,
+        previous[column] + 1,
+        previous[column - 1] + (left[row - 1] === right[column - 1] ? 0 : 1),
+      );
+    }
+    for (let column = 0; column <= right.length; column += 1) {
+      previous[column] = current[column];
+    }
+  }
+
+  return 1 - previous[right.length] / Math.max(left.length, right.length);
+};
+
+const getIngredientSuggestionScore = (query, ingredientName) => {
+  const normalizedName = normalizeIngredientName(ingredientName);
+  const queryWords = query.split(' ').filter(Boolean);
+  const nameWords = normalizedName.split(' ').filter(Boolean);
+  const fullNameScore = getSimilarity(query, normalizedName);
+  const wordScore = Math.max(
+    ...queryWords.flatMap(queryWord =>
+      nameWords.map(nameWord => getSimilarity(queryWord, nameWord)),
+    ),
+    0,
+  );
+
+  return Math.max(fullNameScore, wordScore);
+};
+
 const IngredientInput = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
@@ -30,6 +76,28 @@ const IngredientInput = () => {
   const filteredMasterIngredients = newMasterIngredientsList.filter(ingredient =>
     ingredient.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
     !selectedIngredients.some(selected => selected.name.toLowerCase() === ingredient.name.toLowerCase())
+  );
+
+  const suggestedIngredient = useMemo(() => {
+    const normalizedQuery = normalizeIngredientName(searchQuery);
+    if (!normalizedQuery || filteredMasterIngredients.length > 0) return null;
+
+    return newMasterIngredientsList
+      .filter(ingredient => !selectedIngredients.some(
+        selected => selected.name.toLowerCase() === ingredient.name.toLowerCase(),
+      ))
+      .map(ingredient => ({
+        ingredient,
+        score: getIngredientSuggestionScore(
+          normalizedQuery,
+          ingredient.name,
+        ),
+      }))
+      .sort((left, right) => right.score - left.score)[0] || null;
+  }, [searchQuery, filteredMasterIngredients.length, selectedIngredients]);
+
+  const hasSuggestion = Boolean(
+    suggestedIngredient && suggestedIngredient.score >= 0.58,
   );
 
   useEffect(() => {
@@ -80,6 +148,12 @@ const IngredientInput = () => {
     }
   };
 
+  const handleAcceptSuggestion = () => {
+    if (hasSuggestion && suggestedIngredient?.ingredient) {
+      handleSelectIngredient(suggestedIngredient.ingredient);
+    }
+  };
+
   const handleSearchInputChange = (e) => {
     setSearchQuery(e.target.value);
     if (e.target.value.trim() !== '') {
@@ -94,6 +168,8 @@ const IngredientInput = () => {
       e.preventDefault(); // Mencegah submit form jika ada
       if (filteredMasterIngredients.length > 0) {
         handleSelectIngredient(filteredMasterIngredients[0]);
+      } else if (hasSuggestion) {
+        handleAcceptSuggestion();
       } else {
         handleAddTypedIngredient();
       }
@@ -117,8 +193,8 @@ const IngredientInput = () => {
             className="w-full pl-10 pr-16 py-2 text-sm" // Tambahkan padding kanan untuk tombol "Tambah"
           />
           
-          {/* Tombol "Tambah" jika ada teks dan tidak ada hasil dropdown yang persis */}
-          {searchQuery.trim() && !filteredMasterIngredients.some(ing => ing.name.toLowerCase() === searchQuery.trim().toLowerCase()) && (
+          {/* Bahan manual hanya tersedia jika tidak ada kandidat yang cukup mirip. */}
+          {searchQuery.trim() && !hasSuggestion && (
             <Button
               type="button"
               size="sm"
@@ -147,9 +223,21 @@ const IngredientInput = () => {
                   </li>
                 ))}
               </ul>
+            ) : hasSuggestion ? (
+              <button
+                type="button"
+                className="w-full px-3 py-3 text-left hover:bg-foodie-50 text-sm"
+                onClick={handleAcceptSuggestion}
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                <span className="block text-gray-500">Mungkin maksud Anda:</span>
+                <span className="font-medium text-foodie-600">
+                  {suggestedIngredient.ingredient.name}
+                </span>
+              </button>
             ) : (
               <p className="px-3 py-2 text-gray-500 text-sm">
-                Bahan tidak ditemukan di daftar. Tekan Enter atau tombol "Tambah" untuk menambahkan "{searchQuery}".
+                Bahan tidak ditemukan di daftar. Tekan Enter atau tombol "Tambah" untuk menambahkan "{searchQuery}" secara manual.
               </p>
             )}
           </div>

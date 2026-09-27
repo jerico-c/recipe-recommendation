@@ -1,8 +1,7 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
-import { getRecommendations } from '../services/recommendationService'; 
+import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import { getRecommendationsProgressive } from '../services/recommendationService'; 
 
 const RecipeContext = createContext(undefined);
-
 export const RecipeProvider = ({ children }) => {
   const [selectedIngredients, setSelectedIngredients] = useState([]);
   const [dietaryPreferences, setDietaryPreferences] = useState(['all']); 
@@ -10,6 +9,7 @@ export const RecipeProvider = ({ children }) => {
   const [filteredRecipes, setFilteredRecipes] = useState([]);
   const [isLoadingRecipes, setIsLoadingRecipes] = useState(false); 
   const [recipeError, setRecipeError] = useState(''); 
+  const recommendationRequestRef = useRef(0);
 
   const isServiceReady = true; 
 
@@ -58,6 +58,9 @@ export const RecipeProvider = ({ children }) => {
   };
 
   const fetchRecipesFromService = useCallback(async (ingredients) => {
+    const requestId = recommendationRequestRef.current + 1;
+    recommendationRequestRef.current = requestId;
+
     if (ingredients.length === 0) {
       setFilteredRecipes([]);
       return;
@@ -83,6 +86,7 @@ export const RecipeProvider = ({ children }) => {
       const stepsIdx = headers.indexOf('steps');
       const lovesIdx = headers.indexOf('loves');
       const urlIdx = headers.indexOf('url');
+      const cookingMethodIdx = headers.findIndex(h => h === 'cooking_method' || h === 'cooking method');
 
       const allRecipes = rows.slice(1).map((row, index) => {
         if (!row || row.length === 0 || !row[titleIdx]) return null;
@@ -117,14 +121,23 @@ export const RecipeProvider = ({ children }) => {
           Steps: row[stepsIdx] || '',
           loves: lovesIdx !== -1 ? parseInt(row[lovesIdx]) || 0 : 0,
           Loves: lovesIdx !== -1 ? parseInt(row[lovesIdx]) || 0 : 0,
+          cookingMethod: cookingMethodIdx !== -1 ? row[cookingMethodIdx] || '' : '',
+          Cooking_Method: cookingMethodIdx !== -1 ? row[cookingMethodIdx] || '' : '',
           url: absoluteUrl,
           URL: absoluteUrl,
           imageUrl: realImageUrl // <- Gambar asli siap digunakan!
         };
       }).filter(r => r !== null && r.title);
 
-      const recommended = getRecommendations(ingredients, allRecipes);
-      setFilteredRecipes(recommended);
+      await getRecommendationsProgressive(
+        ingredients,
+        allRecipes,
+        recommended => {
+          if (requestId === recommendationRequestRef.current) {
+            setFilteredRecipes(recommended);
+          }
+        },
+      );
       
     } catch (err) {
       console.error(err);

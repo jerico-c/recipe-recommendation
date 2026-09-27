@@ -7,7 +7,7 @@ import FileInput from '../components/FileInput';
 import { useRecipe } from '../context/RecipeContext';
 
 const Index = () => {
-  const { selectedIngredients, filteredRecipes } = useRecipe();
+  const { selectedIngredients } = useRecipe();
 
   return (
     <div className="min-h-screen">
@@ -88,7 +88,7 @@ const Index = () => {
                   to="/recipes"
                   className="block w-full bg-foodie-500 hover:bg-foodie-600 text-white py-3 px-4 rounded-lg text-center transition-colors"
                 >
-                  Cari Resep ({filteredRecipes.length})
+                  Cari Resep
                 </Link>
               </div>
             )}
